@@ -128,69 +128,95 @@ class ShortsCreator:
             'writeautomaticsub': True,
             'subtitleslangs': ['ru', 'en'],
             'ignoreerrors': True,
+            'cookiesfrombrowser': ('chrome',),  # Используем cookies из Chrome
+            'extractor_retries': 3,
+            'fragment_retries': 3,
         }
         
         try:
+            # Попробуем разные браузеры для cookies
+            browsers = [('chrome',), ('firefox',), ('safari',), None]
+            
+            for browser in browsers:
+                try:
+                    if browser:
+                        ydl_opts['cookiesfrombrowser'] = browser
+                        self.logger.info(f"🍪 Пробуем cookies из {browser[0]}")
+                    else:
+                        ydl_opts.pop('cookiesfrombrowser', None)
+                        self.logger.info("🔄 Пробуем без cookies")
+                    
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        # Получение информации о видео
+                        info = ydl.extract_info(url, download=False)
+                        break  # Если успешно, выходим из цикла
+                        
+                except Exception as e:
+                    if browser:
+                        self.logger.warning(f"⚠️ Не удалось использовать cookies из {browser[0]}: {e}")
+                    else:
+                        self.logger.warning(f"⚠️ Не удалось загрузить без cookies: {e}")
+                    if browser == browsers[-1]:  # Если это последняя попытка
+                        raise e
+                    continue
+                
+            if not info:
+                self.logger.error("❌ Не удалось получить информацию о видео")
+                return None
+            
+            video_info = {
+                'id': info.get('id'),
+                'title': info.get('title'),
+                'duration': info.get('duration'),
+                'description': info.get('description'),
+                'uploader': info.get('uploader'),
+                'upload_date': info.get('upload_date')
+            }
+            
+            # Проверка критически важных полей
+            if not video_info['duration'] or not video_info['title']:
+                self.logger.error("❌ Отсутствует критически важная информация о видео (длительность или название)")
+                return None
+            
+            self.logger.info(f"📺 Видео: {video_info['title']} ({video_info['duration']} сек)")
+            
+            # Проверка длительности
+            if video_info['duration'] < self.config['video']['min_short_duration']:
+                self.logger.warning("⚠️ Видео слишком короткое для создания shorts")
+                return None
+            
+            # Скачивание видео с теми же настройками
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                # Получение информации о видео
-                info = ydl.extract_info(url, download=False)
-                
-                if not info:
-                    self.logger.error("❌ Не удалось получить информацию о видео")
-                    return None
-                
-                video_info = {
-                    'id': info.get('id'),
-                    'title': info.get('title'),
-                    'duration': info.get('duration'),
-                    'description': info.get('description'),
-                    'uploader': info.get('uploader'),
-                    'upload_date': info.get('upload_date')
-                }
-                
-                # Проверка критически важных полей
-                if not video_info['duration'] or not video_info['title']:
-                    self.logger.error("❌ Отсутствует критически важная информация о видео (длительность или название)")
-                    return None
-                
-                self.logger.info(f"📺 Видео: {video_info['title']} ({video_info['duration']} сек)")
-                
-                # Проверка длительности
-                if video_info['duration'] < self.config['video']['min_short_duration']:
-                    self.logger.warning("⚠️ Видео слишком короткое для создания shorts")
-                    return None
-                
-                # Скачивание видео
                 ydl.download([url])
                 
-                # Поиск скачанного файла
-                temp_dir = Path(self.config['paths']['temp_dir'])
-                
-                # Попробуем несколько паттернов поиска
-                search_patterns = [
-                    f"*{video_info['id']}*",
-                    f"*{video_info['title'][:20]}*" if video_info['title'] else None,
-                    "*.mp4", "*.webm", "*.mkv", "*.avi"
-                ]
-                
-                video_files = []
-                for pattern in search_patterns:
-                    if pattern:
-                        files = list(temp_dir.glob(pattern))
-                        if files:
-                            video_files = files
-                            break
-                
-                if video_files:
-                    # Берем самый новый файл
-                    video_file = max(video_files, key=lambda f: f.stat().st_mtime)
-                    video_info['file_path'] = str(video_file)
-                    self.logger.info(f"✅ Видео скачано: {video_info['file_path']}")
-                    return video_info
-                else:
-                    self.logger.error("❌ Не удалось найти скачанный файл")
-                    self.logger.debug(f"Искали в директории: {temp_dir}")
-                    return None
+            # Поиск скачанного файла
+            temp_dir = Path(self.config['paths']['temp_dir'])
+            
+            # Попробуем несколько паттернов поиска
+            search_patterns = [
+                f"*{video_info['id']}*",
+                f"*{video_info['title'][:20]}*" if video_info['title'] else None,
+                "*.mp4", "*.webm", "*.mkv", "*.avi"
+            ]
+            
+            video_files = []
+            for pattern in search_patterns:
+                if pattern:
+                    files = list(temp_dir.glob(pattern))
+                    if files:
+                        video_files = files
+                        break
+            
+            if video_files:
+                # Берем самый новый файл
+                video_file = max(video_files, key=lambda f: f.stat().st_mtime)
+                video_info['file_path'] = str(video_file)
+                self.logger.info(f"✅ Видео скачано: {video_info['file_path']}")
+                return video_info
+            else:
+                self.logger.error("❌ Не удалось найти скачанный файл")
+                self.logger.debug(f"Искали в директории: {temp_dir}")
+                return None
                     
         except Exception as e:
             self.logger.error(f"❌ Ошибка при скачивании видео: {e}")
