@@ -63,9 +63,28 @@ class ShortsCreator:
         except FileNotFoundError:
             print(f"❌ Файл конфигурации {config_path} не найден")
             sys.exit(1)
-        except json.JSONDecodeError as e:
-            print(f"❌ Ошибка в файле конфигурации: {e}")
+        except json.JSONDecodeError:
+            print(f"❌ Ошибка в формате JSON файла {config_path}")
             sys.exit(1)
+    
+    def _load_proxy(self) -> Optional[str]:
+        """Загрузка прокси из файла proxy.txt"""
+        proxy_file = Path('proxy.txt')
+        if proxy_file.exists():
+            try:
+                with open(proxy_file, 'r', encoding='utf-8') as f:
+                    proxy_line = f.read().strip()
+                    if proxy_line:
+                        # Формат: ip:port:user:password
+                        parts = proxy_line.split(':')
+                        if len(parts) == 4:
+                            ip, port, user, password = parts
+                            return f"http://{user}:{password}@{ip}:{port}"
+                        else:
+                            print("⚠️ Неверный формат прокси в proxy.txt (ожидается ip:port:user:password)")
+            except Exception as e:
+                print(f"⚠️ Ошибка при загрузке прокси: {e}")
+        return None
     
     def setup_logging(self):
         """Настройка системы логирования"""
@@ -134,6 +153,11 @@ class ShortsCreator:
             'extractor_retries': 3,
             'fragment_retries': 3,
         }
+        
+        # Добавляем прокси если доступен
+        if self.proxy:
+            ydl_opts['proxy'] = self.proxy
+            self.logger.info(f"🌐 Используем прокси: {self.proxy.split('@')[1] if '@' in self.proxy else self.proxy}")
         
         try:
             # Попробуем разные браузеры для cookies
