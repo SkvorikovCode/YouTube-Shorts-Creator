@@ -109,9 +109,16 @@ class ShortsCreator:
         """
         print(banner)
     
-    def download_video(self, url: str) -> Optional[Dict]:
-        """Скачивание видео с YouTube"""
-        self.logger.info(f"📥 Начинаем скачивание видео: {url}")
+    def download_video(self, input_path: str) -> Optional[Dict]:
+        """Скачивание видео с YouTube или обработка локального файла"""
+        
+        # Проверяем, является ли input_path локальным файлом
+        if os.path.exists(input_path):
+            return self._process_local_file(input_path)
+        
+        # Иначе обрабатываем как YouTube URL
+        self.logger.info(f"📥 Начинаем скачивание видео: {input_path}")
+        url = input_path
         
         # Настройки для yt-dlp
         ydl_opts = {
@@ -188,6 +195,55 @@ class ShortsCreator:
         except Exception as e:
             self.logger.error(f"❌ Ошибка при скачивании видео: {e}")
             self.stats['errors'] += 1
+            return None
+    
+    def _process_local_file(self, file_path: str) -> Optional[Dict]:
+        """Обработка локального видеофайла"""
+        self.logger.info(f"📁 Обрабатываем локальный файл: {file_path}")
+        
+        if not os.path.exists(file_path):
+            self.logger.error(f"❌ Файл не найден: {file_path}")
+            return None
+        
+        # Получаем информацию о видео с помощью ffmpeg
+        try:
+            probe = ffmpeg.probe(file_path)
+            video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
+            
+            if not video_stream:
+                self.logger.error("❌ Видеопоток не найден в файле")
+                return None
+            
+            duration = float(probe['format']['duration'])
+            filename = os.path.basename(file_path)
+            title = os.path.splitext(filename)[0]
+            
+            video_info = {
+                'id': f"local_{hash(file_path)}",
+                'title': title,
+                'duration': duration,
+                'description': f"Локальный файл: {filename}",
+                'uploader': 'Local File',
+                'upload_date': None,
+                'file_path': file_path
+            }
+            
+            # Проверка критически важных полей
+            if not video_info['duration'] or not video_info['title']:
+                self.logger.error("❌ Отсутствует критически важная информация о видео")
+                return None
+            
+            self.logger.info(f"📺 Видео: {video_info['title']} ({video_info['duration']:.1f} сек)")
+            
+            # Проверка длительности
+            if video_info['duration'] < self.config['video']['min_short_duration']:
+                self.logger.warning("⚠️ Видео слишком короткое для создания shorts")
+                return None
+            
+            return video_info
+            
+        except Exception as e:
+            self.logger.error(f"❌ Ошибка при анализе локального файла: {e}")
             return None
     
     def extract_audio_and_subtitles(self, video_info: Dict) -> Dict:
@@ -358,6 +414,7 @@ class ShortsCreator:
         
         segment_duration = self.config['video']['max_short_duration']
         segments = []
+        duration = int(duration)  # Преобразуем в int для range()
         
         for i in range(0, duration, segment_duration):
             end_time = min(i + segment_duration, duration)
@@ -599,7 +656,7 @@ def main():
         """
     )
     
-    parser.add_argument('url', help='URL YouTube видео для обработки')
+    parser.add_argument('input', help='URL YouTube видео или путь к локальному видеофайлу для обработки')
     parser.add_argument('--config', '-c', default='config.json', help='Путь к файлу конфигурации')
     parser.add_argument('--verbose', '-v', action='store_true', help='Подробный вывод')
     parser.add_argument('--version', action='version', version='YouTube Shorts Creator 1.0.0')
@@ -618,7 +675,7 @@ def main():
         creator.print_banner()
         
         # Обработка видео
-        success = creator.process_video(args.url)
+        success = creator.process_video(args.input)
         
         # Вывод статистики
         creator.print_statistics()
