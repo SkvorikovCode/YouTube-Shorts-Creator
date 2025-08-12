@@ -22,7 +22,7 @@
   "ai": {
     "ollama": {
       "base_url": "http://localhost:11434",
-      "model": "llama3.2",
+      "model": "qwen3:4b",
       "alternative_models": ["mistral", "codellama"],
       "timeout": 300,
       "max_tokens": 2048
