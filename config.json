@@ -1,0 +1,57 @@
+{
+  "app": {
+    "name": "YouTube Shorts Creator",
+    "version": "1.0.0",
+    "author": "SkvorikovCode",
+    "year": 2025,
+    "description": "Автоматическое создание коротких роликов из YouTube видео с использованием ИИ"
+  },
+  "paths": {
+    "output_dir": "./output",
+    "temp_dir": "./temp",
+    "logs_dir": "./logs"
+  },
+  "video": {
+    "max_short_duration": 60,
+    "min_short_duration": 15,
+    "video_quality": "720p",
+    "audio_quality": "192k",
+    "output_format": "mp4",
+    "segments_overlap": 2
+  },
+  "ai": {
+    "ollama": {
+      "base_url": "http://localhost:11434",
+      "model": "llama3.2",
+      "alternative_models": ["mistral", "codellama"],
+      "timeout": 300,
+      "max_tokens": 2048
+    },
+    "whisper": {
+      "model": "base",
+      "language": "auto",
+      "task": "transcribe"
+    }
+  },
+  "processing": {
+    "max_concurrent_jobs": 2,
+    "ffmpeg_threads": 4,
+    "enable_gpu_acceleration": false,
+    "preserve_temp_files": false
+  },
+  "logging": {
+    "level": "INFO",
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    "file_logging": true,
+    "console_colors": true,
+    "max_log_size_mb": 10,
+    "backup_count": 5
+  },
+  "features": {
+    "auto_generate_titles": true,
+    "auto_generate_descriptions": true,
+    "extract_thumbnails": true,
+    "analyze_sentiment": true,
+    "detect_highlights": true
+  }
+}
