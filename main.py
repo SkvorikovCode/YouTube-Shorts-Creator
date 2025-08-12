@@ -83,7 +83,11 @@ class ShortsCreator:
         
         # Файловый обработчик
         if log_config['file_logging']:
-            log_file = Path(self.config['paths']['logs_dir']) / f"shorts_creator_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+            # Убеждаемся, что директория для логов существует
+            logs_dir = Path(self.config['paths']['logs_dir'])
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            
+            log_file = logs_dir / f"shorts_creator_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
             file_handler = logging.FileHandler(log_file, encoding='utf-8')
             file_handler.setFormatter(formatter)
             self.logger.addHandler(file_handler)
@@ -124,6 +128,10 @@ class ShortsCreator:
                 # Получение информации о видео
                 info = ydl.extract_info(url, download=False)
                 
+                if not info:
+                    self.logger.error("❌ Не удалось получить информацию о видео")
+                    return None
+                
                 video_info = {
                     'id': info.get('id'),
                     'title': info.get('title'),
@@ -132,6 +140,11 @@ class ShortsCreator:
                     'uploader': info.get('uploader'),
                     'upload_date': info.get('upload_date')
                 }
+                
+                # Проверка критически важных полей
+                if not video_info['duration'] or not video_info['title']:
+                    self.logger.error("❌ Отсутствует критически важная информация о видео (длительность или название)")
+                    return None
                 
                 self.logger.info(f"📺 Видео: {video_info['title']} ({video_info['duration']} сек)")
                 
@@ -145,14 +158,31 @@ class ShortsCreator:
                 
                 # Поиск скачанного файла
                 temp_dir = Path(self.config['paths']['temp_dir'])
-                video_files = list(temp_dir.glob(f"*{video_info['id']}*"))
+                
+                # Попробуем несколько паттернов поиска
+                search_patterns = [
+                    f"*{video_info['id']}*",
+                    f"*{video_info['title'][:20]}*" if video_info['title'] else None,
+                    "*.mp4", "*.webm", "*.mkv", "*.avi"
+                ]
+                
+                video_files = []
+                for pattern in search_patterns:
+                    if pattern:
+                        files = list(temp_dir.glob(pattern))
+                        if files:
+                            video_files = files
+                            break
                 
                 if video_files:
-                    video_info['file_path'] = str(video_files[0])
+                    # Берем самый новый файл
+                    video_file = max(video_files, key=lambda f: f.stat().st_mtime)
+                    video_info['file_path'] = str(video_file)
                     self.logger.info(f"✅ Видео скачано: {video_info['file_path']}")
                     return video_info
                 else:
                     self.logger.error("❌ Не удалось найти скачанный файл")
+                    self.logger.debug(f"Искали в директории: {temp_dir}")
                     return None
                     
         except Exception as e:
@@ -164,7 +194,16 @@ class ShortsCreator:
         """Извлечение аудио и субтитров из видео"""
         self.logger.info("🎵 Извлекаем аудио для анализа")
         
+        if 'file_path' not in video_info or not video_info['file_path']:
+            self.logger.error("❌ Отсутствует путь к видеофайлу")
+            return {}
+        
         video_path = video_info['file_path']
+        
+        if not os.path.exists(video_path):
+            self.logger.error(f"❌ Видеофайл не найден: {video_path}")
+            return {}
+        
         audio_path = os.path.join(self.config['paths']['temp_dir'], f"{video_info['id']}_audio.wav")
         
         try:
@@ -334,10 +373,23 @@ class ShortsCreator:
     
     def create_shorts(self, video_info: Dict, segments: List[Dict]) -> List[str]:
         """Создание коротких роликов из сегментов"""
+        if not segments:
+            self.logger.warning("⚠️ Нет сегментов для создания shorts")
+            return []
+        
         self.logger.info(f"✂️ Создаем {len(segments)} коротких роликов...")
         
         output_files = []
+        
+        if 'file_path' not in video_info or not video_info['file_path']:
+            self.logger.error("❌ Отсутствует путь к видеофайлу")
+            return []
+        
         video_path = video_info['file_path']
+        
+        if not os.path.exists(video_path):
+            self.logger.error(f"❌ Видеофайл не найден: {video_path}")
+            return []
         
         # Создание папки для выходных файлов
         output_dir = Path(self.config['paths']['output_dir']) / self._sanitize_filename(video_info['title'])
@@ -345,12 +397,26 @@ class ShortsCreator:
         
         for i, segment in enumerate(tqdm(segments, desc="Создание shorts")):
             try:
+                # Проверка корректности данных сегмента
+                if not isinstance(segment, dict) or 'start_time' not in segment or 'end_time' not in segment:
+                    self.logger.error(f"❌ Некорректные данные сегмента {i+1}")
+                    self.stats['errors'] += 1
+                    continue
+                
+                start_time = segment['start_time']
+                end_time = segment['end_time']
+                
+                if start_time >= end_time or start_time < 0:
+                    self.logger.error(f"❌ Некорректное время сегмента {i+1}: {start_time}-{end_time}")
+                    self.stats['errors'] += 1
+                    continue
+                
                 output_file = output_dir / f"short_{i+1:03d}.mp4"
                 
                 # Нарезка видео с помощью ffmpeg
                 (
                     ffmpeg
-                    .input(video_path, ss=segment['start_time'], t=segment['end_time'] - segment['start_time'])
+                    .input(video_path, ss=start_time, t=end_time - start_time)
                     .output(
                         str(output_file),
                         vcodec='libx264',
