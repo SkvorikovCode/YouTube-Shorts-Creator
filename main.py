@@ -150,13 +150,16 @@ class ShortsCreator:
             'subtitleslangs': ['ru', 'en'],
             'ignoreerrors': True,
             'cookiesfrombrowser': ('chrome',),  # Используем cookies из Chrome
-            'extractor_retries': 3,
-            'fragment_retries': 3,
+            'extractor_retries': 5,
+            'fragment_retries': 5,
+            'socket_timeout': 60,
+            'http_chunk_size': 10485760,  # 10MB chunks
         }
         
         # Добавляем прокси если доступен
         if self.proxy:
             ydl_opts['proxy'] = self.proxy
+            ydl_opts['socket_timeout'] = 120  # Увеличиваем таймаут для прокси
             self.logger.info(f"🌐 Используем прокси: {self.proxy.split('@')[1] if '@' in self.proxy else self.proxy}")
         
         try:
