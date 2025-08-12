@@ -39,8 +39,10 @@ class ShortsCreator:
     def __init__(self, config_path: str = "config.json"):
         """Инициализация с загрузкой конфигурации"""
         self.config = self._load_config(config_path)
+        self.proxy = self._load_proxy()
         self.setup_logging()
         self.setup_directories()
+        self.print_banner()
         self.whisper_model = None
         
         # Статистика обработки

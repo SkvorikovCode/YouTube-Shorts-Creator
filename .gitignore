@@ -46,3 +46,4 @@ coverage.xml
 /logs
 *.mp4
 /temp
+proxy.txt
