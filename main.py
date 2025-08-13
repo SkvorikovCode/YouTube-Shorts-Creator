@@ -163,29 +163,51 @@ class ShortsCreator:
             self.logger.info(f"🌐 Используем прокси: {self.proxy.split('@')[1] if '@' in self.proxy else self.proxy}")
         
         try:
-            # Попробуем разные браузеры для cookies
-            browsers = [('chrome',), ('firefox',), ('safari',), None]
+            # Попробуем разные конфигурации
+            configs = [
+                # С прокси и cookies
+                {'use_proxy': True, 'browser': ('chrome',)},
+                {'use_proxy': True, 'browser': ('firefox',)},
+                {'use_proxy': True, 'browser': None},
+                # Без прокси
+                {'use_proxy': False, 'browser': ('chrome',)},
+                {'use_proxy': False, 'browser': ('firefox',)},
+                {'use_proxy': False, 'browser': None},
+            ]
             
-            for browser in browsers:
+            for config in configs:
                 try:
-                    if browser:
-                        ydl_opts['cookiesfrombrowser'] = browser
-                        self.logger.info(f"🍪 Пробуем cookies из {browser[0]}")
-                    else:
-                        ydl_opts.pop('cookiesfrombrowser', None)
-                        self.logger.info("🔄 Пробуем без cookies")
+                    current_opts = ydl_opts.copy()
                     
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    # Настройка прокси
+                    if not config['use_proxy'] and 'proxy' in current_opts:
+                        current_opts.pop('proxy')
+                        current_opts['socket_timeout'] = 60
+                        self.logger.info("🔄 Пробуем без прокси")
+                    elif config['use_proxy'] and self.proxy:
+                        self.logger.info(f"🌐 Пробуем с прокси: {self.proxy.split('@')[1] if '@' in self.proxy else self.proxy}")
+                    
+                    # Настройка cookies
+                    if config['browser']:
+                        current_opts['cookiesfrombrowser'] = config['browser']
+                        self.logger.info(f"🍪 Используем cookies из {config['browser'][0]}")
+                    else:
+                        current_opts.pop('cookiesfrombrowser', None)
+                        self.logger.info("🔄 Без cookies")
+                    
+                    with yt_dlp.YoutubeDL(current_opts) as ydl:
                         # Получение информации о видео
                         info = ydl.extract_info(url, download=False)
                         break  # Если успешно, выходим из цикла
                         
                 except Exception as e:
-                    if browser:
-                        self.logger.warning(f"⚠️ Не удалось использовать cookies из {browser[0]}: {e}")
+                    error_msg = str(e)
+                    if "Connection reset" in error_msg or "timeout" in error_msg.lower():
+                        self.logger.warning(f"⚠️ Проблема с соединением: {error_msg[:100]}...")
                     else:
-                        self.logger.warning(f"⚠️ Не удалось загрузить без cookies: {e}")
-                    if browser == browsers[-1]:  # Если это последняя попытка
+                        self.logger.warning(f"⚠️ Ошибка конфигурации: {error_msg[:100]}...")
+                    
+                    if config == configs[-1]:  # Если это последняя попытка
                         raise e
                     continue
                 
